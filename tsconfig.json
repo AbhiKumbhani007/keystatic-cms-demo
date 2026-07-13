@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/keystatic.config": ["./keystatic.config.ts"]
     }
   },
   "include": [

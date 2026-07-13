@@ -1,12 +1,41 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Docs design tokens (light) */
+  --ds-bg: #ffffff;
+  --ds-surface: #fafafa;
+  --ds-fg: #1a1a1a;
+  --ds-muted: #667085;
+  --ds-border: #e6e6e9;
+  --ds-accent: #2563eb;
+  --ds-active-bg: rgba(37, 99, 235, 0.1);
+  --ds-hover-bg: rgba(0, 0, 0, 0.04);
+  --ds-code-bg: #0d1117;
+  --ds-code-fg: #e6edf3;
+  --ds-inline-code-bg: rgba(0, 0, 0, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    /* Docs design tokens (dark) */
+    --ds-bg: #0a0a0a;
+    --ds-surface: #111114;
+    --ds-fg: #e7e7ea;
+    --ds-muted: #9aa0aa;
+    --ds-border: #26262b;
+    --ds-accent: #6ea8fe;
+    --ds-active-bg: rgba(110, 168, 254, 0.16);
+    --ds-hover-bg: rgba(255, 255, 255, 0.06);
+    --ds-code-bg: #161b22;
+    --ds-code-fg: #e6edf3;
+    --ds-inline-code-bg: rgba(255, 255, 255, 0.1);
+  }
+  html {
+    color-scheme: dark;
   }
 }
 
@@ -26,7 +55,8 @@ body {
   flex-direction: column;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -42,8 +72,111 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+/* ---------------------------------------------------------------------------
+   Docs content typography (rendered Markdoc output)
+   --------------------------------------------------------------------------- */
+.docs-content {
+  color: var(--ds-fg);
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.docs-content > * + * {
+  margin-top: 1rem;
+}
+
+.docs-content h1,
+.docs-content h2,
+.docs-content h3,
+.docs-content h4 {
+  line-height: 1.25;
+  font-weight: 650;
+  scroll-margin-top: 1.5rem;
+}
+
+.docs-content h1 {
+  font-size: 2rem;
+  margin-top: 0;
+}
+.docs-content h2 {
+  font-size: 1.5rem;
+  margin-top: 2rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--ds-border);
+}
+.docs-content h3 {
+  font-size: 1.2rem;
+  margin-top: 1.5rem;
+}
+.docs-content h4 {
+  font-size: 1.05rem;
+  margin-top: 1.25rem;
+}
+
+.docs-content p,
+.docs-content li {
+  color: var(--ds-fg);
+}
+
+.docs-content a {
+  color: var(--ds-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.docs-content ul,
+.docs-content ol {
+  padding-left: 1.5rem;
+}
+
+.docs-content li + li {
+  margin-top: 0.35rem;
+}
+
+.docs-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875em;
+  background: var(--ds-inline-code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 5px;
+}
+
+.docs-content pre {
+  overflow-x: auto;
+}
+
+.docs-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.docs-content blockquote {
+  border-left: 3px solid var(--ds-border);
+  padding-left: 1rem;
+  color: var(--ds-muted);
+}
+
+.docs-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.docs-content table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+
+.docs-content th,
+.docs-content td {
+  border: 1px solid var(--ds-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.docs-content hr {
+  border: none;
+  border-top: 1px solid var(--ds-border);
 }

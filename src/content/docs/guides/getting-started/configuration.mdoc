@@ -1,0 +1,21 @@
+---
+title: Configuration
+navLabel: Configuration
+description: Configure storage, auth, and revalidation.
+order: 2
+draft: false
+hidden: false
+---
+
+# Configuration
+
+Configure the platform through environment variables.
+
+{% tabs %}
+{% tab label="Development" %}
+Uses local storage — content is written straight to disk.
+{% /tab %}
+{% tab label="Production" %}
+Uses GitHub storage — every save auto-commits to your repo.
+{% /tab %}
+{% /tabs %}
