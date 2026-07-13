@@ -1,5 +1,7 @@
 import 'server-only';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
@@ -59,35 +61,40 @@ export async function commitAndPush(
   const name = process.env.GIT_BOT_NAME || 'Keystatic Bot';
   const email = process.env.GIT_BOT_EMAIL || 'bot@users.noreply.github.com';
 
-  await git(['add', '--', ...paths]);
+  // Only stage paths that currently exist (e.g. public/images/docs may not
+  // exist until the first image is uploaded).
+  const existing = paths.filter((p) => existsSync(path.join(CWD, p)));
+  if (existing.length > 0) await git(['add', '--', ...existing]);
 
-  // `diff --cached --quiet` exits 0 when nothing is staged.
+  // Commit only if something is staged (`diff --cached --quiet` exits 0 when
+  // nothing is staged).
+  let committed = false;
   try {
     await git(['diff', '--cached', '--quiet']);
-    return { committed: false, reason: 'no changes' };
   } catch {
-    // non-zero exit => staged changes exist; continue.
+    await git([
+      '-c',
+      `user.name=${name}`,
+      '-c',
+      `user.email=${email}`,
+      'commit',
+      '-m',
+      message,
+    ]);
+    committed = true;
   }
 
-  await git([
-    '-c',
-    `user.name=${name}`,
-    '-c',
-    `user.email=${email}`,
-    'commit',
-    '-m',
-    message,
-  ]);
-
-  // Integrate any concurrent remote changes before pushing.
-  await git([...authArgs(), 'pull', '--rebase', url, branch()]);
+  // Integrate any concurrent remote changes, then push. `--autostash` keeps a
+  // dirty working tree from blocking the rebase. The push also flushes any
+  // earlier commits that failed to push previously; it's a no-op if up to date.
+  await git([...authArgs(), 'pull', '--rebase', '--autostash', url, branch()]);
   await git([...authArgs(), 'push', url, `HEAD:${branch()}`]);
-  return { committed: true };
+  return { committed };
 }
 
 /** Pull the latest content (used by the revalidation webhook for direct edits). */
 export async function pullLatest(): Promise<void> {
   const url = repoUrl();
   if (!url) throw new Error('missing GITHUB_PAT / repo env');
-  await git([...authArgs(), 'pull', '--rebase', url, branch()]);
+  await git([...authArgs(), 'pull', '--rebase', '--autostash', url, branch()]);
 }

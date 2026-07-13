@@ -1,30 +1,46 @@
 # Docs Platform — Keystatic + Next.js 16
 
 A documentation platform where editors manage a **deeply nested tree of markdown
-pages** through the Keystatic admin UI, content is **committed to GitHub** on
-save, and the public site is **fully static** with **on-demand revalidation**.
+pages** through the Keystatic admin UI (behind an **email/password** gate), every
+change is **auto-committed to GitHub by a bot user**, and the public site is
+**fully static** with **on-demand revalidation**.
 
-- **CMS:** Keystatic (`@keystatic/core`, `@keystatic/next`) — GitHub storage mode
+- **CMS:** Keystatic (`@keystatic/core`, `@keystatic/next`) — **local** storage mode
 - **Framework:** Next.js 16.2 (App Router) + React 19
 - **Authoring:** Markdoc with custom components (callouts, code blocks, tabs)
-- **Auth:** custom email/password gate in front of `/keystatic`
+- **Auth:** custom email/password gate in front of `/keystatic` (no GitHub accounts for editors)
+- **Auto-commit:** a server-side watcher commits + pushes edits to GitHub as a **bot user via a PAT**
 - **Deploy:** Docker → AWS ECS Fargate (`next start`, standalone output)
 
-## Architecture
+## How it works
+
+```
+Editor → /admin-login (email/password) → /keystatic
+       → save → Keystatic writes markdown to disk (local mode)
+       → chokidar watcher (instrumentation) debounces
+       → git commit as bot + push (PAT) → GitHub
+       → pings /api/revalidate → static site refreshes
+
+Direct md edit on GitHub → push webhook → /api/revalidate → git pull + revalidate
+```
+
+Content and the app live in **one repo**; markdown is under `src/content/docs/**`.
 
 | Concern | How |
 | --- | --- |
 | Nested tree | One `docs` collection, `path: 'src/content/docs/**'`. Hierarchy = slug path = URL. |
 | Sidebar | `buildDocTree()` (`src/lib/docs.ts`) splits slugs into segments, sorts by `order`, hides drafts/hidden. |
 | Public pages | `src/app/docs/[[...slug]]/page.tsx` — optional catch-all, `generateStaticParams`, `dynamicParams=false`. |
-| Content read | `src/lib/reader.ts` — `createReader` (local/dev) or `createGitHubReader` (prod, runtime fetch = refreshable). |
-| Admin auth | `src/proxy.ts` checks a signed session cookie; `/admin-login` validates email/password (`ADMIN_USERS`). |
-| Revalidation | `src/app/api/revalidate/route.ts` — bearer secret (Postman) or GitHub webhook HMAC. |
+| Content read | `src/lib/reader.ts` — local `createReader` (reads committed markdown from disk). |
+| Admin auth | `src/proxy.ts` checks a signed cookie; `/admin-login` validates email/password (`ADMIN_USERS`). |
+| Auto-commit | `src/lib/auto-commit.ts` (watcher) + `src/lib/git.ts` (bot commit/push) + `src/instrumentation.ts`. |
+| Revalidation | `src/app/api/revalidate/route.ts` — bearer secret (Postman) or GitHub webhook HMAC (pulls first). |
+| Theming | `src/app/globals.css` design tokens (light + dark) + `.docs-content` typography. |
 
 ## Local development
 
 ```bash
-cp .env.example .env.local   # set ADMIN_USERS + SESSION_SECRET at minimum
+cp .env.example .env.local   # fill in the values below
 npm install
 npm run dev
 ```
@@ -32,8 +48,29 @@ npm run dev
 - Public site: http://127.0.0.1:3000/docs
 - Admin UI: http://127.0.0.1:3000/keystatic (redirects to `/admin-login`)
 
-In dev, storage + reader default to **local** (writes markdown straight to
-`src/content/docs`), so no GitHub setup is needed to try it out.
+**Minimum env to run** (`.env.local`): `ADMIN_USERS`, `SESSION_SECRET`,
+`REVALIDATE_SECRET`. To enable auto-commit, also set the bot vars below.
+
+### Enabling bot auto-commit
+
+Set in `.env.local` (see `.env.example`):
+
+```
+NEXT_PUBLIC_GITHUB_REPO_OWNER="AbhiKumbhani007"
+NEXT_PUBLIC_GITHUB_REPO_NAME="keystatic-cms-demo"
+GITHUB_PAT="<bot PAT with Contents:read/write on the repo>"
+GIT_BOT_NAME="Keystatic Bot"
+GIT_BOT_EMAIL="bot@users.noreply.github.com"
+GIT_AUTO_COMMIT="true"
+```
+
+The watcher starts on server boot (via `src/instrumentation.ts`). Edit a doc in
+`/keystatic`, and within a few seconds the change is committed + pushed to the
+repo as the bot, then the live site is revalidated. If `GITHUB_PAT` is unset the
+watcher is a safe no-op.
+
+> Security: the PAT is fed to git via a credential helper reading from the
+> process env — it is never placed in a URL, argv, or error output.
 
 ## Content model & nesting
 
@@ -43,52 +80,43 @@ Create nesting by putting **slashes in the slug**, e.g.
 
 > ⚠️ Keystatic has **no folder-picker** for nested slugs
 > ([issue #1482](https://github.com/Thinkmill/keystatic/issues/1482)) — editors
-> type the path as free text. Agree on a naming convention to avoid divergent
-> folders from typos.
+> type the path as free text. Agree on a naming convention.
 
-Frontmatter fields drive the sidebar: `navLabel`, `order`, `draft` (excluded
-from the published site), `hidden` (reachable by URL, not in the sidebar).
+Frontmatter fields drive the sidebar: `navLabel`, `order`, `draft` (excluded from
+the site), `hidden` (reachable by URL, not in the sidebar).
 
-## Production (GitHub mode) setup
-
-1. Set `KEYSTATIC_STORAGE_KIND=github`, `NEXT_PUBLIC_GITHUB_REPO_OWNER`,
-   `NEXT_PUBLIC_GITHUB_REPO_NAME`.
-2. Run the app and open `/keystatic` (behind the password gate) — Keystatic
-   walks you through **creating a GitHub App**, then fill in
-   `KEYSTATIC_GITHUB_CLIENT_ID/SECRET`, `KEYSTATIC_SECRET`,
-   `NEXT_PUBLIC_KEYSTATIC_GITHUB_APP_SLUG`.
-3. Set `GITHUB_PAT` for the frontend reader (`createGitHubReader`).
-4. Editors log in with GitHub (repo write access) **after** the email/password
-   gate; every save auto-commits to the repo.
-
-See `.env.example` for the full list.
+Custom Markdoc components (`callout`, `tabs`, `tab`) are registered **twice** and
+must stay aligned: for the editor in `keystatic.config.ts`
+(`@keystatic/core/content-components`) and for rendering in `src/lib/markdoc.ts`
++ `src/components/markdoc/*`.
 
 ## Revalidation
-
-The site is static; content refreshes via `/api/revalidate` (no rebuild needed
-when using the GitHub reader).
 
 **Manual / Postman** — full-site refresh:
 ```bash
 curl -X POST https://<domain>/api/revalidate \
   -H "Authorization: Bearer $REVALIDATE_SECRET" -d '{}'
 ```
-Single page: add `-d '{"path":"/docs/guides/getting-started/install"}'`.
+Single page: `-d '{"path":"/docs/guides/getting-started/install"}'`.
+Force a content pull first: `-d '{"pull":true}'`.
 
-**Automatic on content change** — add a **GitHub push webhook** on the content
-repo pointing at `https://<domain>/api/revalidate`, content-type
-`application/json`, secret = `GITHUB_WEBHOOK_SECRET`. This covers **both** admin
-saves (which commit to GitHub) and **direct edits** to md files — no separate
-admin button needed.
+**Automatic** — add a **GitHub push webhook** on the repo → `/api/revalidate`,
+content-type `application/json`, secret = `GITHUB_WEBHOOK_SECRET`. On a direct md
+edit it verifies the HMAC, `git pull`s the change, and revalidates.
 
 ## Deploy to AWS (ECS Fargate)
 
 ```bash
 docker build \
-  --build-arg NEXT_PUBLIC_GITHUB_REPO_OWNER=your-org \
-  --build-arg NEXT_PUBLIC_GITHUB_REPO_NAME=your-docs-repo \
+  --build-arg NEXT_PUBLIC_GITHUB_REPO_OWNER=AbhiKumbhani007 \
+  --build-arg NEXT_PUBLIC_GITHUB_REPO_NAME=keystatic-cms-demo \
   -t docs-platform .
 ```
 
-Run behind an ALB; supply all env vars from `.env.example` to the task. Point the
-GitHub App OAuth callback URL and the push webhook at the deployed domain.
+Run behind an ALB; supply all env vars from `.env.example` to the task. Ensure
+`git` is available in the runtime image and the working tree is a clone of the
+content repo. Point the push webhook at the deployed domain.
+
+> Note: the auto-commit watcher assumes a **single** writable instance. For
+> multiple replicas, only the instance that served the save has the change until
+> the others pull; scale the admin to one task or add a shared pull step.
